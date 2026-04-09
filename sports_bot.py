@@ -39,6 +39,17 @@ load_dotenv()
 from risk_guard import RiskManager
 risk_manager = RiskManager()
 
+# ── Shadow Logging ────────────────────────────────────────────────────────────
+SHADOW_LOG_FILE = os.getenv("SHADOW_LOG_FILE", "shadow_log.jsonl")
+
+def shadow_log(opportunity: dict, taken: bool, reason: str = ""):
+    entry = {"ts": time.time(), "taken": taken, "reason": reason, **opportunity}
+    try:
+        with open(SHADOW_LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
+
 
 class Config:
     ANTHROPIC_API_KEY: str  = os.getenv("ANTHROPIC_API_KEY", "")
@@ -795,6 +806,7 @@ class SportsStrategy:
 
         decision = await self.claude.decide(opp, self.risk.recent_context())
         if not decision.trade:
+            shadow_log({"bot": "sports", "ticker": opp.kalshi_ticker, "sport": opp.sport, "edge": opp.edge_pct, "strategy": opp.strategy}, taken=False, reason="Claude declined trade")
             return
 
         side = decision.side
@@ -822,6 +834,7 @@ class SportsStrategy:
             if not allowed:
                 log.info(f"[PAPER] Risk guard would block: {reason}")
 
+        shadow_log({"bot": "sports", "ticker": opp.kalshi_ticker, "sport": opp.sport, "side": side, "price": price_cents, "edge": opp.edge_pct, "contracts": contracts, "strategy": opp.strategy}, taken=True)
         if Config.PAPER_MODE:
             self._paper_execute(opp, side, contracts, price_cents, actual_cost, decision)
         else:
