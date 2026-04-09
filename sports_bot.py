@@ -86,6 +86,7 @@ class Config:
 
     # 3.5% edge required — must clear Kalshi taker fee at mid-range prices
     MIN_EDGE_PCT: float      = float(os.getenv("MIN_EDGE_PCT", "0.035"))
+    MAKER_FEE: float         = float(os.getenv("MAKER_FEE", "0.0175"))
     # Raised from 15 to 30 — evaluate 2x more per cycle
     MAX_GAMES_PER_POLL: int  = int(os.getenv("MAX_GAMES_PER_POLL", "30"))
     # Poll every 2 minutes — fast enough to catch live pricing windows
@@ -607,6 +608,11 @@ class SportsStrategy:
                 best_edge = max(yes_edge, no_edge)
 
                 if best_edge < Config.MIN_EDGE_PCT:
+                    continue
+
+                # Fee-aware EV check
+                ev_after_fees = best_edge - Config.MAKER_FEE
+                if ev_after_fees <= 0:
                     continue
 
                 best_side  = "yes" if yes_edge >= no_edge else "no"
