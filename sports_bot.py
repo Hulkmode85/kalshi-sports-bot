@@ -51,6 +51,34 @@ def shadow_log(opportunity: dict, taken: bool, reason: str = ""):
         pass
 
 
+
+# ─── Regime Detection — pause trading during extreme volatility ────────────
+import statistics as _stats
+
+REGIME_WINDOW = int(os.getenv("REGIME_WINDOW", "20"))
+REGIME_THRESHOLD = float(os.getenv("REGIME_THRESHOLD", "3.0"))
+_regime_prices: list[float] = []
+
+def check_regime(price: float) -> str:
+    """Returns 'CALM', 'ELEVATED', or 'CRASH'. Skip trades during CRASH."""
+    _regime_prices.append(price)
+    if len(_regime_prices) > REGIME_WINDOW:
+        _regime_prices.pop(0)
+    if len(_regime_prices) < 5:
+        return "CALM"
+    rets = [(b - a) / a for a, b in zip(_regime_prices[:-1], _regime_prices[1:])]
+    if not rets:
+        return "CALM"
+    mu = _stats.mean(rets)
+    sd = _stats.stdev(rets) if len(rets) > 1 else 0.01
+    z = abs(rets[-1] - mu) / max(sd, 0.0001)
+    if z > REGIME_THRESHOLD:
+        return "CRASH"
+    elif z > REGIME_THRESHOLD * 0.6:
+        return "ELEVATED"
+    return "CALM"
+
+
 class Config:
     ANTHROPIC_API_KEY: str  = os.getenv("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL: str       = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
@@ -834,6 +862,12 @@ class SportsStrategy:
             if not allowed:
                 log.info(f"[PAPER] Risk guard would block: {reason}")
 
+        # ── Regime detection ──
+        regime = check_regime(float(price_cents))
+        if regime == "CRASH":
+            log.warning("REGIME CRASH on kalshi_sports_bot — skipping trade")
+            shadow_log({"bot": "kalshi_sports_bot", "regime": regime}, taken=False, reason="crash regime")
+            return
         shadow_log({"bot": "sports", "ticker": opp.kalshi_ticker, "sport": opp.sport, "side": side, "price": price_cents, "edge": opp.edge_pct, "contracts": contracts, "strategy": opp.strategy}, taken=True)
         if Config.PAPER_MODE:
             self._paper_execute(opp, side, contracts, price_cents, actual_cost, decision)
