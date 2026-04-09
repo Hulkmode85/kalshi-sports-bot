@@ -20,6 +20,8 @@ import base64
 import json
 import logging
 import os
+from flask import Flask, jsonify
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -96,7 +98,7 @@ class Config:
     MIN_TRADE_USD: float    = float(os.getenv("MIN_TRADE_USD", "2.0"))         # lowered from $5 to $2
 
     PAPER_MODE: bool        = os.getenv("PAPER_MODE", "true").lower() == "true"
-    PAPER_BALANCE: float    = float(os.getenv("PAPER_STARTING_BALANCE", "500.0"))
+    PAPER_BALANCE: float    = float(os.getenv("PAPER_STARTING_BALANCE", "5000.0"))
 
     # Momentum strategy: trade Kalshi price moves > this pct
     MOMENTUM_THRESHOLD: float = float(os.getenv("MOMENTUM_THRESHOLD", "0.08"))  # 8% price move
@@ -830,6 +832,27 @@ class SportsStrategy:
             log.error(f"[LIVE] Order failed: {e}")
 
 
+# ── Stats HTTP server ─────────────────────────────────────────────────────────
+_stats_app = Flask(__name__)
+_bot_stats = {"trades": 0, "wins": 0, "pnl": 0.0, "balance": 0.0, "start": time.time()}
+
+@_stats_app.route("/stats")
+def _stats_endpoint():
+    t = _bot_stats
+    total = t["trades"]
+    return jsonify({"bot": "kalshi-sports-bot", "paper_mode": True,
+        "balance": t["balance"], "trades": total, "wins": t["wins"],
+        "losses": total - t["wins"], "win_rate": round(t["wins"]/max(total,1), 4),
+        "pnl": t["pnl"], "uptime_hours": round((time.time()-t["start"])/3600, 2)})
+
+@_stats_app.route("/health")
+def _health_endpoint():
+    return jsonify({"status": "ok"})
+
+def _run_stats_server():
+    _stats_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+
 async def main():
     log.info("=" * 60)
     log.info("  Kalshi Sports Bot v3 — Ultra-Aggressive Mode")
@@ -862,6 +885,8 @@ async def main():
             return
 
     risk     = RiskManager(balance)
+    _bot_stats['balance'] = balance
+    threading.Thread(target=_run_stats_server, daemon=True).start()
     strategy = SportsStrategy(kalshi, odds, claude, risk)
 
     async def status_loop():
