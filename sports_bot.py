@@ -36,6 +36,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from risk_guard import RiskManager
+risk_manager = RiskManager()
+
 
 class Config:
     ANTHROPIC_API_KEY: str  = os.getenv("ANTHROPIC_API_KEY", "")
@@ -799,6 +802,19 @@ class SportsStrategy:
             f"{side.upper()} x{contracts} @ {price_cents}c = ${actual_cost:.2f} | "
             f"Edge: +{opp.edge_pct:.1%} | {opp.strategy} | {decision.confidence}"
         )
+
+        # ── Risk Guard check ──
+        if not Config.PAPER_MODE:
+            allowed, reason, capped = risk_manager.pre_trade_check(opp.kalshi_ticker, price_cents, contracts, side, bot_name="sports-bot")
+            if not allowed:
+                log.warning(f"Risk guard blocked: {reason}")
+                return
+            contracts = capped
+            actual_cost = (contracts * price_cents) / 100
+        else:
+            allowed, reason, capped = risk_manager.pre_trade_check(opp.kalshi_ticker, price_cents, contracts, side, bot_name="sports-bot")
+            if not allowed:
+                log.info(f"[PAPER] Risk guard would block: {reason}")
 
         if Config.PAPER_MODE:
             self._paper_execute(opp, side, contracts, price_cents, actual_cost, decision)
