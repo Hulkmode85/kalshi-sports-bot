@@ -79,6 +79,44 @@ def check_regime(price: float) -> str:
     return "CALM"
 
 
+
+# ── Early Exit Logic ─────────────────────────────────────────────────────────
+EARLY_EXIT_THRESHOLD = float(os.getenv("EARLY_EXIT_THRESHOLD", "0.93"))
+
+def should_early_exit(current_price_cents: float) -> bool:
+    """Exit position early at 93c+ to lock in profit instead of holding to settlement."""
+    return current_price_cents >= EARLY_EXIT_THRESHOLD * 100
+
+# ── Circuit Breakers ─────────────────────────────────────────────────────────
+CONSECUTIVE_LOSS_PAUSE = int(os.getenv("CONSECUTIVE_LOSS_PAUSE", "3"))
+DAILY_DRAWDOWN_PAUSE_PCT = float(os.getenv("DAILY_DRAWDOWN_PAUSE_PCT", "0.05"))
+
+_consecutive_losses = 0
+_daily_pnl = 0.0
+_circuit_paused_until = 0
+
+def check_circuit_breaker() -> bool:
+    """Returns True if trading should be paused."""
+    import time as _time
+    global _consecutive_losses, _daily_pnl, _circuit_paused_until
+    if _time.time() < _circuit_paused_until:
+        return True
+    if _consecutive_losses >= CONSECUTIVE_LOSS_PAUSE:
+        return True
+    # Use PAPER_BALANCE if available, else 5000
+    _balance = globals().get("PAPER_BALANCE", 5000)
+    if _daily_pnl < -DAILY_DRAWDOWN_PAUSE_PCT * _balance:
+        return True
+    return False
+
+def record_trade_result(won: bool, pnl: float):
+    """Update circuit breaker state after each trade result."""
+    global _consecutive_losses, _daily_pnl
+    _daily_pnl += pnl
+    if won:
+        _consecutive_losses = 0
+    else:
+        _consecutive_losses += 1
 class Config:
     ANTHROPIC_API_KEY: str  = os.getenv("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL: str       = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
@@ -124,7 +162,7 @@ class Config:
     ]
 
     # 3.5% edge required — must clear Kalshi taker fee at mid-range prices
-    MIN_EDGE_PCT: float      = float(os.getenv("MIN_EDGE_PCT", "0.035"))
+    MIN_EDGE_PCT: float      = float(os.getenv("MIN_EDGE_PCT", "0.05"))
     MAKER_FEE: float         = float(os.getenv("MAKER_FEE", "0.0175"))
     # Raised from 15 to 30 — evaluate 2x more per cycle
     MAX_GAMES_PER_POLL: int  = int(os.getenv("MAX_GAMES_PER_POLL", "30"))
