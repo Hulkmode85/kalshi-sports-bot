@@ -104,7 +104,7 @@ def check_circuit_breaker() -> bool:
     if _consecutive_losses >= CONSECUTIVE_LOSS_PAUSE:
         return True
     # Use PAPER_BALANCE if available, else 5000
-    _balance = globals().get("PAPER_BALANCE", 5000)
+    _balance = globals().get("PAPER_BALANCE", 2000)
     if _daily_pnl < -DAILY_DRAWDOWN_PAUSE_PCT * _balance:
         return True
     return False
@@ -179,7 +179,7 @@ class Config:
     MIN_TRADE_USD: float    = float(os.getenv("MIN_TRADE_USD", "2.0"))         # lowered from $5 to $2
 
     PAPER_MODE: bool        = os.getenv("PAPER_MODE", "true").lower() == "true"
-    PAPER_BALANCE: float    = float(os.getenv("PAPER_STARTING_BALANCE", "5000.0"))
+    PAPER_BALANCE: float    = float(os.getenv("PAPER_STARTING_BALANCE", "2000.0"))
 
     # Momentum strategy: trade Kalshi price moves > this pct
     MOMENTUM_THRESHOLD: float = float(os.getenv("MOMENTUM_THRESHOLD", "0.08"))  # 8% price move
